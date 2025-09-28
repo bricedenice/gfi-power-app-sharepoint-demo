@@ -1,0 +1,4 @@
+Email,DisplayName,GivenName,Surname,JobTitle,Department,Password,ForceChange
+user1@yourtenant.onmicrosoft.com,User One,User,One,Director,Command,YourSecurePassword123!,TRUE
+user2@yourtenant.onmicrosoft.com,User Two,User,Two,Deputy Director,Command,YourSecurePassword123!,TRUE
+user3@yourtenant.onmicrosoft.com,User Three,User,Three,SCD Director,Strategic Concepts Division,YourSecurePassword123!,TRUE

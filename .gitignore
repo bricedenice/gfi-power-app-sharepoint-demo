@@ -1,0 +1,34 @@
+# Sensitive files
+*.pfx
+*.p12
+config.json
+config.ps1
+secrets.json
+
+# Development folder (contains production credentials)
+development/
+
+# User data files
+users.csv
+*.xlsx
+
+# Environment specific
+.env
+.env.local
+*.local.ps1
+
+# PowerShell specific
+*.log
+
+# Certificate files
+*.cer
+*.crt
+
+# Backup files
+*.bak
+*.backup
+
+# IDE files
+.vscode/settings.json
+.idea/
+GFI-SharePoint-Repo/

@@ -1,9 +1,9 @@
-# GFI Strategic Concepts demo environment (Work In Progress)
+# GFI Strategic Concepts Demo Environment
 
 ## Overview
-This repository contains PowerShell automation scripts for Microsoft 365 and SharePoint demo environment setup. The demo environment simulates **Global Force Integration (GFI) Strategic Concepts Division** user management, group provisioning, and SharePoint integration capabilities.
+PowerShell automation scripts for Microsoft 365 and SharePoint demo environment setup. Simulates **Global Force Integration (GFI) Strategic Concepts Division** user management, group provisioning, and SharePoint integration.
 
-## Repository structure
+## Repository Structure
 ```
 /GFI-SCD-Demo/
 ├── demo/                        # Template scripts for public use
@@ -19,7 +19,7 @@ This repository contains PowerShell automation scripts for Microsoft 365 and Sha
 * PnP.PowerShell module
 * Azure AD app registration with appropriate permissions
 
-## Setup instructions
+## Setup Instructions
 
 ### Configuration
 1. Copy configuration template
@@ -33,7 +33,7 @@ This repository contains PowerShell automation scripts for Microsoft 365 and Sha
    * Include certificate thumbprint for authentication
    * Update SharePoint site URLs
 
-### User data preparation
+### User Data Preparation
 1. Copy user template
    ```powershell
    Copy-Item users-template.csv users.csv
@@ -44,7 +44,7 @@ This repository contains PowerShell automation scripts for Microsoft 365 and Sha
    * Define appropriate job titles and departments
    * Set secure passwords for demo accounts
 
-### Script execution
+### Script Execution
 Execute scripts in sequence:
 ```powershell
 # Create demo users in Azure AD
@@ -57,7 +57,7 @@ Execute scripts in sequence:
 .\demo\Add_To_Groups.ps1
 ```
 
-## Script descriptions
+## Script Descriptions
 
 | Script | Function | Dependencies |
 |--------|----------|--------------|
@@ -65,34 +65,34 @@ Execute scripts in sequence:
 | Add_To_M365_Group.ps1 | Microsoft 365 group membership | Microsoft.Graph |
 | Add_To_Groups.ps1 | SharePoint site permission configuration | PnP.PowerShell |
 
-## Security configuration
+## Security Configuration
 
-### Azure AD app registration requirements
+### Azure AD App Registration Requirements
 * API permissions
   * Microsoft Graph: User.ReadWrite.All, Group.ReadWrite.All, Directory.ReadWrite.All
   * SharePoint: Sites.FullControl.All
 * Certificate-based authentication (recommended)
 * Administrative consent required
 
-### Certificate setup
+### Certificate Setup
 1. Generate certificate (self-signed or enterprise CA)
 2. Upload public key to Azure AD app registration
 3. Reference certificate thumbprint in configuration file
 
-## Demo environment structure
+## Demo Environment Structure
 
-### Organizational structure
+### Organizational Structure
 * **Command**: Leadership positions (Director, Deputy Director, Chief of Staff)
 * **Strategic Concepts Division**: Strategy and analysis personnel
 * **Joint Concepts Division**: Development and implementation team
 * **Data Science Team**: Analytics support
 
-### SharePoint groups
+### SharePoint Groups
 * **SCD Editors**: Contribute permissions for Strategic Concepts library
 * **JCD Reviewers**: Read permissions for Strategic Concepts library
 * **Standard hierarchy**: Owners, Members, Visitors
 
-## Security considerations
+## Security Considerations
 * Template files contain no production credentials
 * Development folder excluded from version control
 * Certificate authentication recommended for production use

@@ -11,6 +11,7 @@ development/
 # User data files
 users.csv
 *.xlsx
+aiprompt.md
 
 # Environment specific
 .env
@@ -31,4 +32,23 @@ users.csv
 # IDE files
 .vscode/settings.json
 .idea/
+
+# Archived content
 GFI-SharePoint-Repo/
+
+# Development workspaces (keep private)
+flows/
+solutions/
+
+# Certificate directory
+certs/
+
+# Test documents
+testdocs/
+
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Temporary analysis reports
+.gitignore-analysis-report*.md

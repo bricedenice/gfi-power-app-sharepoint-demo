@@ -1,4 +1,4 @@
-# GFI Strategic Concepts demo environment
+# GFI Strategic Concepts demo environment (Work In Progress)
 
 ## Overview
 This repository contains PowerShell automation scripts for Microsoft 365 and SharePoint demo environment setup. The demo environment simulates **Global Force Integration (GFI) Strategic Concepts Division** user management, group provisioning, and SharePoint integration capabilities.

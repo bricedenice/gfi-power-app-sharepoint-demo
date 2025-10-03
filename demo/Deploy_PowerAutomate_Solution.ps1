@@ -35,7 +35,7 @@ param(
     [string]$SourceEnvironment = "",
     
     [Parameter(Mandatory=$false)]
-    [string]$TargetEnvironment = "https://orgXXXXXX.crm.dynamics.com/",
+    [string]$TargetEnvironment = "https://orgXXXXXX.crm.dynamics.com/",  # Default: Commercial; Use .crm.dynamics.us for GCC or .crm.microsoftdynamics.us for GCC High
     
     [Parameter(Mandatory=$false)]
     [string]$EnvironmentId = "YOUR_ENVIRONMENT_ID",
@@ -59,11 +59,31 @@ param(
     [string]$SharePointSiteUrl = "https://yourtenant.sharepoint.com/sites/YourSite",
     
     [Parameter(Mandatory=$false)]
+    [string]$ServicePrincipalId = "",
+    
+    [Parameter(Mandatory=$false)]
+    [string]$ServicePrincipalSecret = "",
+    
+    [Parameter(Mandatory=$false)]
     [switch]$SkipFlowActivation,
     
     [Parameter(Mandatory=$false)]
-    [switch]$ExportFromSource
+    [switch]$ExportFromSource,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$UseInteractiveAuth  # Explicit opt-in for dev/test only
 )
+
+# Validate endpoint configuration for GCC/GCC High compliance
+function Test-EndpointCompliance {
+    if ($TargetEnvironment -match "\.com/$") {
+        Write-Warning "⚠️ Using commercial cloud endpoint ($TargetEnvironment). For GCC/GCC High compliance, ensure endpoint uses .us domains."
+    } else {
+        Write-Host "✔ Endpoint configuration validated for government cloud ($TargetEnvironment)" -ForegroundColor Green
+    }
+}
+
+Test-EndpointCompliance
 
 # Enterprise logging and error handling infrastructure
 $ErrorActionPreference = "Stop"
@@ -85,6 +105,9 @@ function Write-DeploymentLog {
     }
     
     Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $colorMap[$Level]
+    # Append to a log file for audit purposes (FedRAMP AU-2, AU-12)
+    $logFile = "DeploymentAuditLog_$(Get-Date -Format 'yyyyMMdd').log"
+    "[$timestamp] [$Level] [Deploy_PowerAutomate_Solution] $Message" | Out-File -FilePath $logFile -Append -Encoding UTF8
 }
 
 function Invoke-PacCommand {
@@ -144,9 +167,17 @@ function Initialize-PowerPlatformCLI {
     # Authenticate to Power Platform
     Write-DeploymentLog "Authenticating to Power Platform environment: $EnvironmentUrl" "INFO"
     
-    # Interactive authentication for Power Platform CLI
-    # In production, use service principal: pac auth create --applicationId <id> --clientSecret <secret> --tenant <tenant>
-    Invoke-PacCommand -Command "auth" -Description "Power Platform authentication" -Arguments @("create", "--url", $EnvironmentUrl)
+    if ($ServicePrincipalId -and $ServicePrincipalSecret) {
+        $authArgs = @("create", "--applicationId", $ServicePrincipalId, "--clientSecret", $ServicePrincipalSecret, "--tenant", $TenantId, "--url", $EnvironmentUrl)
+        Write-DeploymentLog "Using service principal authentication for unattended operation" "INFO"
+    } elseif ($UseInteractiveAuth) {
+        Write-Warning "⚠️ Using interactive auth. Not suitable for production automation."
+        $authArgs = @("create", "--url", $EnvironmentUrl)
+    } else {
+        throw "Service principal credentials required for production. Use -UseInteractiveAuth for dev/test only."
+    }
+    
+    Invoke-PacCommand -Command "auth" -Description "Power Platform authentication" -Arguments $authArgs
     
     # List available environments to verify connection
     $environments = Invoke-PacCommand -Command "org" -Description "List environments" -Arguments @("list") -ContinueOnError

@@ -10,23 +10,40 @@ ENVIRONMENT_NAME="Default-$ENVIRONMENT_ID"  # Used for PnP CLI
 TENANT_ID="YOUR_TENANT_ID"
 CONCEPT_FLOW_ID="4a282ad2-9cbf-0de7-4791-2edbc35a3887"
 
-# Base URL for Power Automate API
-BASE_URL="https://api.flow.microsoft.com/providers/Microsoft.ProcessSimple"
+# Configurable Base URL for Power Automate API (Commercial and Government Cloud)
+# Use api.flow.microsoft.com for commercial, gov.api.flow.microsoft.us for GCC/GCC High
+BASE_URL="https://api.flow.microsoft.com/providers/Microsoft.ProcessSimple"  # Default: Commercial; Change to gov.api.flow.microsoft.us for GCC/GCC High
 
-# CLI Method preference (pnp or rest)
-CLI_METHOD=${CLI_METHOD:-"rest"}  # Default to REST API
+# Utility function for logging
+function log() {
+    local level=$1
+    local msg=$2
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S.%3N')
+    echo "[$timestamp] [$level] [flow-commands] $msg"
+    # Append to a log file for audit purposes (FedRAMP AU-2, AU-12)
+    local logfile="AuditLog_$(date '+%Y%m%d').log"
+    echo "[$timestamp] [$level] [flow-commands] $msg" >> "$logfile"
+}
 
 # Get access token (for REST API)
 get_token() {
-    az account get-access-token --resource https://service.flow.microsoft.com --query accessToken -o tsv
+    az account get-access-token --resource https://service.flow.microsoft.com --query accessToken -o tsv 2>/dev/null
+    if [ $? -ne 0 ]; then
+        log "ERROR" "Azure CLI not authenticated. Run 'az login' first."
+        echo "❌ Azure CLI not authenticated. Run 'az login' first."
+        exit 1
+    fi
+    log "INFO" "Access token retrieved successfully"
 }
 
 # Check CLI availability
 check_cli_availability() {
     if ! command -v m365 &> /dev/null; then
+        log "WARNING" "PnP CLI Microsoft 365 not found. Install with: npm install -g @pnp/cli-microsoft365"
         echo "⚠️  PnP CLI Microsoft 365 not found. Install with: npm install -g @pnp/cli-microsoft365"
         return 1
     fi
+    log "INFO" "PnP CLI Microsoft 365 found"
     return 0
 }
 
@@ -34,6 +51,7 @@ check_cli_availability() {
 ensure_pnp_auth() {
     if [ "$CLI_METHOD" = "pnp" ]; then
         if ! check_cli_availability; then
+            log "WARNING" "PnP CLI not available, falling back to REST API"
             echo "❌ PnP CLI not available, falling back to REST API"
             CLI_METHOD="rest"
             return 1
@@ -41,6 +59,7 @@ ensure_pnp_auth() {
         
         # Check if already logged in
         if ! m365 status --output json 2>/dev/null | jq -e '.connectedAs' > /dev/null; then
+            log "INFO" "Authenticating with PnP CLI Microsoft 365..."
             echo "🔐 Authenticating with PnP CLI Microsoft 365..."
             m365 login
         fi
@@ -53,9 +72,11 @@ list_flows() {
     local with_solutions=${2:-false}
     local as_admin=${3:-false}
     
+    log "INFO" "Listing flows with sharing status: $sharing_status"
     ensure_pnp_auth
     
     if [ "$CLI_METHOD" = "pnp" ]; then
+        log "INFO" "Using PnP CLI to list flows"
         echo "🔍 Listing flows using PnP CLI (sharing: $sharing_status)..."
         local cmd="m365 flow list --environmentName $ENVIRONMENT_NAME --sharingStatus $sharing_status --output json"
         
@@ -68,11 +89,22 @@ list_flows() {
         fi
         
         eval $cmd | jq '.[] | {name: .name, displayName: .displayName, state: .state, sharingType: .sharingType}'
+        if [ $? -eq 0 ]; then
+            log "SUCCESS" "Flows listed successfully using PnP CLI"
+        else
+            log "ERROR" "Failed to list flows using PnP CLI"
+        fi
     else
+        log "INFO" "Using REST API to list flows in environment $ENVIRONMENT_ID"
         echo "🔍 Listing flows using REST API in environment $ENVIRONMENT_ID..."
         curl -s -X GET "$BASE_URL/environments/$ENVIRONMENT_ID/flows" \
             -H "Authorization: Bearer $(get_token)" \
             -H "Content-Type: application/json" | jq '.value[] | {name: .name, displayName: .properties.displayName, state: .properties.state}'
+        if [ $? -eq 0 ]; then
+            log "SUCCESS" "Flows listed successfully using REST API"
+        else
+            log "ERROR" "Failed to list flows using REST API"
+        fi
     fi
 }
 

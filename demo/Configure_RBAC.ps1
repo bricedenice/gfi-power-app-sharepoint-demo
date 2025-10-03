@@ -78,6 +78,21 @@ param(
 # The param() block can be inline for simple functions
 function Step { param([string]$m) Write-Host "==> $m" -ForegroundColor Cyan }
 
+function Write-AuditLog {
+    param(
+        [string]$Message,
+        [string]$Level = "INFO",
+        [string]$Component = "Configure_RBAC"
+    )
+    
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $logEntry = "[$timestamp] [$Level] [$Component] $Message"
+    Write-Host $logEntry
+    # Append to a log file for audit purposes
+    $logFile = "AuditLog_$(Get-Date -Format 'yyyyMMdd').log"
+    $logEntry | Out-File -FilePath $logFile -Append -Encoding UTF8
+}
+
 # Simple helper for consistent output formatting
 # PowerShell functions don't need explicit return—last expression is returned
 function Info { param([string]$m) Write-Host "   $m" }
@@ -91,6 +106,7 @@ function TryDo {
     # & operator executes the scriptblock (like invoke() in Kotlin)
     & $Action
     Write-Host "   ✔ $Title" -ForegroundColor Green
+    Write-AuditLog -Message "Operation '$Title' completed successfully" -Level "SUCCESS"
     return $true
   }
   catch { 
@@ -98,6 +114,7 @@ function TryDo {
     # $($_.Exception.Message) - subexpression syntax for string interpolation
     Write-Host "   ✖ $Title" -ForegroundColor Red
     Write-Host "     Error: $($_.Exception.Message)" -ForegroundColor DarkRed
+    Write-AuditLog -Message "Operation '$Title' failed: $($_.Exception.Message)" -Level "ERROR"
     return $false 
   }
 }
@@ -290,12 +307,41 @@ function Ensure-GroupMembers { param([string]$GroupName,[string[]]$Members)
 # Connect
 # Using custom TryDo function with scriptblock
 # The { } creates a scriptblock (lambda) passed to TryDo function
-$ok = TryDo "Connect to $SiteUrl" {
-  Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId -Thumbprint $Thumbprint -Tenant $TenantId -ErrorAction Stop
+
+# Function to check certificate expiration
+function Test-CertificateExpiration {
+    param([string]$Thumbprint)
+    
+    $cert = Get-ChildItem -Path Cert:\CurrentUser\My\$Thumbprint -ErrorAction SilentlyContinue
+    if (-not $cert) {
+        $cert = Get-ChildItem -Path Cert:\LocalMachine\My\$Thumbprint -ErrorAction SilentlyContinue
+    }
+    
+    if (-not $cert) {
+        throw "Certificate $Thumbprint not found in certificate store"
+    }
+    
+    $daysUntilExpiry = ($cert.NotAfter - (Get-Date)).Days
+    
+    if ($daysUntilExpiry -lt 0) {
+        throw "Certificate expired on $($cert.NotAfter). Renewal required."
+    } elseif ($daysUntilExpiry -lt 30) {
+        Write-Warning "⚠️ Certificate expires in $daysUntilExpiry days ($($cert.NotAfter)). Renewal recommended."
+    } else {
+        Write-Host "✔ Certificate valid until $($cert.NotAfter) ($daysUntilExpiry days remaining)" -ForegroundColor Green
+    }
+    
+    return $cert
 }
-# Early exit pattern with semicolon statement separator
-# if (-not $ok) is like Kotlin's if (!ok), exit 1 terminates script
-if (-not $ok) { exit 1 }
+
+$ok = TryDo "Connect to $SiteUrl" {
+    Test-CertificateExpiration -Thumbprint $Thumbprint
+    Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId -Thumbprint $Thumbprint -Tenant $TenantId -ErrorAction Stop
+}
+if (-not $ok) { 
+    Write-AuditLog -Message "Connection to $SiteUrl failed, exiting script" -Level "CRITICAL"
+    exit 1 
+}
 
 # Metadata: fields + CT
 # Function calls within scriptblocks with parameter splatting

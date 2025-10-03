@@ -37,24 +37,49 @@ param(
     [string]$TenantId = "YOUR_TENANT_ID",
     
     [Parameter(Mandatory=$false)]
-    [string]$OrgUrl = "https://orgXXXXXX.crm.dynamics.com/",
+    [string]$OrgUrl = "https://orgXXXXXX.crm.dynamics.com/",  # Default: Commercial; Use .crm.dynamics.us for GCC or .crm.microsoftdynamics.us for GCC High
+    
+    [Parameter(Mandatory=$false)]
+    [string]$EnvironmentId = "YOUR_ENVIRONMENT_ID",
     
     [Parameter(Mandatory=$false)]
     [string]$ClientId = "YOUR_CLIENT_ID",
     
     [Parameter(Mandatory=$false)]
-    [string]$CertificateThumbprint = "YOUR_CERTIFICATE_THUMBPRINT",
-    
+    [string]$CertThumbprint = "YOUR_CERTIFICATE_THUMBPRINT",
     
     [Parameter(Mandatory=$false)]
     [string]$SharePointSiteUrl = "https://yourtenant.sharepoint.com/sites/YourSite",
     
     [Parameter(Mandatory=$false)]
-    [string]$FlowEnvironmentId = "YOUR_ENVIRONMENT_ID",
+    [string]$FlowApiUrl = "https://api.flow.microsoft.com",  # Default: Commercial; Use gov.api.flow.microsoft.us for GCC/GCC High
     
     [Parameter(Mandatory=$false)]
-    [int]$DaysBack = 7
+    [switch]$SkipDataverseCheck,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$SkipFlowCheck,
+    
+    [Parameter(Mandatory=$false)]
+    [switch]$SkipSharePointCheck
 )
+
+# Validate endpoint configuration for GCC/GCC High compliance
+function Test-EndpointCompliance {
+    if ($OrgUrl -match "\.com/$") {
+        Write-Warning "⚠️ Using commercial cloud endpoint ($OrgUrl). For GCC/GCC High compliance, ensure endpoint uses .us domains."
+    } else {
+        Write-Host "✔ Endpoint configuration validated for government cloud ($OrgUrl)" -ForegroundColor Green
+    }
+    
+    if ($FlowApiUrl -match "\.com$") {
+        Write-Warning "⚠️ Using commercial flow API endpoint ($FlowApiUrl). For GCC/GCC High compliance, use gov.api.flow.microsoft.us."
+    } else {
+        Write-Host "✔ Flow API endpoint validated for government cloud ($FlowApiUrl)" -ForegroundColor Green
+    }
+}
+
+Test-EndpointCompliance
 
 # TECHNIQUE: Import required modules with error handling
 function Import-RequiredModules {
@@ -77,37 +102,37 @@ function Import-RequiredModules {
     return $true
 }
 
-# TECHNIQUE: Enhanced authentication with token caching and expiration validation
+# Function to get authentication tokens for Dataverse and Power Platform
 function Get-AuthenticationTokens {
-    param($TenantId, $ClientId, $CertThumbprint, $OrgUrl)
+    param(
+        [string]$TenantId,
+        [string]$ClientId,
+        [string]$CertThumbprint,
+        [string]$OrgUrl
+    )
     
-    Write-Host "Authenticating to services..." -ForegroundColor Cyan
+    # Check certificate expiration
+    Test-CertificateExpiration -Thumbprint $CertThumbprint
     
-    # Dataverse API token with expiration check
-    $resource = "$OrgUrl/.default"
-    $dataverseTokenResult = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -Scopes $resource -CertificateThumbprint $CertThumbprint
-    
-    # TECHNIQUE: Token expiration validation to prevent API failures
-    if ($dataverseTokenResult.ExpiresOn -lt (Get-Date).AddMinutes(5)) {
-        throw "Dataverse token expires soon. Refresh credentials or extend session."
-    }
-    $dataverseToken = $dataverseTokenResult.AccessToken
-    
-    # Power Platform API token with expiration check
+    # Get tokens using MSAL.PS
+    $dataverseTokenResult = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -Scopes "$OrgUrl/.default" -CertificateThumbprint $CertThumbprint
     $powerPlatformTokenResult = Get-MsalToken -ClientId $ClientId -TenantId $TenantId -Scopes "https://service.powerapps.com/.default" -CertificateThumbprint $CertThumbprint
     
-    if ($powerPlatformTokenResult.ExpiresOn -lt (Get-Date).AddMinutes(5)) {
-        throw "Power Platform token expires soon. Refresh credentials or extend session."
-    }
+    $dataverseToken = $dataverseTokenResult.AccessToken
     $powerPlatformToken = $powerPlatformTokenResult.AccessToken
+    
+    # Clear plaintext tokens from memory as soon as possible
+    $dataverseTokenResult = $null
+    $powerPlatformTokenResult = $null
+    [System.GC]::Collect()
     
     return @{
         DataverseHeaders = @{ 
             Authorization = "Bearer $dataverseToken"
             'Content-Type' = 'application/json'
-            'OData-MaxVersion' = '4.0'
+            Accept = 'application/json'
         }
-        PowerPlatformHeaders = @{ 
+        PowerPlatformHeaders = @{
             Authorization = "Bearer $powerPlatformToken"
             'Content-Type' = 'application/json'
         }
@@ -351,7 +376,7 @@ function Get-FlowRunHistory {
     
     try {
         # Get flows in environment
-        $flowsUri = "https://api.flow.microsoft.com/providers/Microsoft.ProcessSimple/environments/$EnvironmentId/flows"
+        $flowsUri = "$FlowApiUrl/providers/Microsoft.ProcessSimple/environments/$EnvironmentId/flows"
         $flows = Invoke-RestMethodWithRetry -Method GET -Uri $flowsUri -Headers $Headers
         
         # TECHNIQUE: More specific flow name filter or use exact flow GUID for reliability
@@ -364,7 +389,7 @@ function Get-FlowRunHistory {
             Write-Host "✔ Found Concept Approval flow: $($conceptFlow.properties.displayName)" -ForegroundColor Green
             
             # Get recent runs
-            $runsUri = "https://api.flow.microsoft.com/providers/Microsoft.ProcessSimple/environments/$EnvironmentId/flows/$($conceptFlow.name)/runs"
+            $runsUri = "$FlowApiUrl/providers/Microsoft.ProcessSimple/environments/$EnvironmentId/flows/$($conceptFlow.name)/runs"
             $runs = Invoke-RestMethodWithRetry -Method GET -Uri $runsUri -Headers $Headers
             
             $recentRuns = $runs.value | Where-Object { 
@@ -457,6 +482,50 @@ $( if ($ErrorData.Count -gt 5) {
 
 # ==================== MAIN EXECUTION ====================
 
+# Enterprise logging and error handling infrastructure
+$ErrorActionPreference = "Stop"
+
+function Write-AuditLog {
+    param(
+        [string]$Message,
+        [string]$Level = "INFO",
+        [string]$Component = "Verify_ConceptApproval_Results"
+    )
+    
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $logEntry = "[$timestamp] [$Level] [$Component] $Message"
+    $colorMap = @{
+        "INFO" = "White"
+        "SUCCESS" = "Green"
+        "WARNING" = "Yellow"
+        "ERROR" = "Red"
+        "STEP" = "Cyan"
+        "CRITICAL" = "Magenta"
+    }
+    
+    Write-Host $logEntry -ForegroundColor $colorMap[$Level]
+    # Append to a log file for audit purposes (FedRAMP AU-2, AU-12)
+    $logFile = "AuditLog_$(Get-Date -Format 'yyyyMMdd').log"
+    $logEntry | Out-File -FilePath $logFile -Append -Encoding UTF8
+}
+
+function TryDo {
+    param([string]$Title, [scriptblock]$Action)
+    Write-Host "==> $Title" -ForegroundColor Cyan
+    try {
+        & $Action
+        Write-Host "   ✔ $Title" -ForegroundColor Green
+        Write-AuditLog -Message "Operation '$Title' completed successfully" -Level "SUCCESS"
+        return $true
+    }
+    catch {
+        Write-Host "   ✖ $Title" -ForegroundColor Red
+        Write-Host "     Error: $($_.Exception.Message)" -ForegroundColor DarkRed
+        Write-AuditLog -Message "Operation '$Title' failed: $($_.Exception.Message)" -Level "ERROR"
+        return $false
+    }
+}
+
 Write-Host "GFI Concept Approval Flow - Verification & Monitoring" -ForegroundColor Yellow
 Write-Host "====================================================" -ForegroundColor Yellow
 
@@ -484,11 +553,13 @@ if (-not (Import-RequiredModules)) {
 
 # Step 2: Authenticate to services
 try {
-    $authTokens = Get-AuthenticationTokens -TenantId $TenantId -ClientId $ClientId -CertThumbprint $CertificateThumbprint -OrgUrl $OrgUrl
+    $authTokens = Get-AuthenticationTokens -TenantId $TenantId -ClientId $ClientId -CertThumbprint $CertThumbprint -OrgUrl $OrgUrl
     Write-Host "✔ Authentication successful" -ForegroundColor Green
+    Write-AuditLog -Message "Authentication to services successful" -Level "SUCCESS"
 }
 catch {
-    Write-Error "Authentication failed: $($_.Exception.Message)"
+    Write-Host "✖ Authentication failed: $($_.Exception.Message)" -ForegroundColor Red
+    Write-AuditLog -Message "Authentication failed: $($_.Exception.Message)" -Level "ERROR"
     exit 1
 }
 
@@ -499,11 +570,11 @@ $conceptData = Get-ConceptStatusAnalytics -Headers $authTokens.DataverseHeaders 
 $errorData = Get-FlowErrorAnalysis -Headers $authTokens.DataverseHeaders -OrgUrl $OrgUrl -DaysBack $DaysBack
 
 # Step 5: Verify SharePoint integration
-Test-SharePointIntegration -SharePointSiteUrl $SharePointSiteUrl -ClientId $ClientId -CertThumbprint $CertificateThumbprint -TenantId $TenantId
+Test-SharePointIntegration -SharePointSiteUrl $SharePointSiteUrl -ClientId $ClientId -CertThumbprint $CertThumbprint -TenantId $TenantId
 
 # Step 6: Check Power Automate flow runs (if environment provided)
-if ($FlowEnvironmentId) {
-    Get-FlowRunHistory -Headers $authTokens.PowerPlatformHeaders -EnvironmentId $FlowEnvironmentId -DaysBack $DaysBack
+if ($EnvironmentId) {
+    Get-FlowRunHistory -Headers $authTokens.PowerPlatformHeaders -EnvironmentId $EnvironmentId -DaysBack $DaysBack
 }
 
 # Step 7: Generate health report
@@ -533,3 +604,4 @@ Write-Host "`nFor detailed analysis, review:" -ForegroundColor Cyan
 Write-Host "- ConceptStatus records: $($conceptData.Count) found" -ForegroundColor Gray
 Write-Host "- FlowError records: $($errorData.Count) found" -ForegroundColor Gray
 Write-Host "- Health report: ./health-report.md" -ForegroundColor Gray
+

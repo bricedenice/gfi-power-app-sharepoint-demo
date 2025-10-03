@@ -3,16 +3,36 @@
 # Power Platform Solution Management Commands
 # GFI Strategic Concepts Demo Environment
 
-# Environment Configuration (Updated with Developer Resources)
+# Environment Configuration
 ENVIRONMENT_ID="YOUR_ENVIRONMENT_ID"
-ENVIRONMENT_UNIQUE_NAME="unq45e514643b99f0118706000d3a342"
-ORGANIZATION_ID="YOUR_ORGANIZATION_ID"
-WEB_API_ENDPOINT="https://orgXXXXXX.api.crm.dynamics.com/api/data/v9.2"
-DATAVERSE_URL="https://orgXXXXXX.crm.dynamics.com"
 TENANT_ID="YOUR_TENANT_ID"
 SOLUTION_NAME="GFIConceptFlow"
-PUBLISHER_NAME="GFI"
-PUBLISHER_PREFIX="gfi"
+
+# Configurable Endpoints for Commercial and Government Cloud (GCC/GCC High)
+# Use .crm.dynamics.com for commercial, .crm.dynamics.us for GCC, or .crm.microsoftdynamics.us for GCC High
+DATAVERSE_URL="https://orgXXXXXX.crm.dynamics.com"  # Default: Commercial; Change to .us for GCC or .microsoftdynamics.us for GCC High
+WEB_API_ENDPOINT="${DATAVERSE_URL}/api/data/v9.2"
+
+# Utility function for logging
+function log() {
+    local level=$1
+    local msg=$2
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S.%3N')
+    echo "[$timestamp] [$level] [solution-commands] $msg"
+    # Append to a log file for audit purposes (FedRAMP AU-2, AU-12)
+    local logfile="AuditLog_$(date '+%Y%m%d').log"
+    echo "[$timestamp] [$level] [solution-commands] $msg" >> "$logfile"
+}
+
+# Check if Power Platform CLI is installed
+function check_pac_cli() {
+    if ! command -v pac &> /dev/null; then
+        log "ERROR" "Power Platform CLI (pac) not found. Install it first."
+        log "INFO" "Installation: https://docs.microsoft.com/en-us/power-platform/developer/cli/introduction#install-power-platform-cli"
+        exit 1
+    fi
+    log "INFO" "Power Platform CLI found: $(pac --version)"
+}
 
 # Create new solution project
 create_solution() {
@@ -245,26 +265,19 @@ list_solutions() {
 
 # Authenticate to Power Platform
 authenticate() {
-    local tenant_id=${1:-$TENANT_ID}
-    local dataverse_url=${2:-$DATAVERSE_URL}
-    
-    echo "🔐 Authenticating to Power Platform..."
-    echo "   Tenant ID: $tenant_id"
-    echo "   Dataverse URL: $dataverse_url"
-    echo "   Environment ID: $ENVIRONMENT_ID"
-    echo "   Organization ID: $ORGANIZATION_ID"
-    
-    pac auth create --url "$dataverse_url" --tenant "$tenant_id"
-    
-    if [ $? -eq 0 ]; then
-        echo "✅ Authentication successful"
-        pac auth list
-        echo ""
-        echo "🌐 Developer Resources Configured:"
-        echo "   Web API Endpoint: $WEB_API_ENDPOINT"
-        echo "   Environment Unique Name: $ENVIRONMENT_UNIQUE_NAME"
+    log "INFO" "Authenticating to Power Platform..."
+    if [ -n "$SERVICE_PRINCIPAL_ID" ] && [ -n "$SERVICE_PRINCIPAL_SECRET" ]; then
+        log "INFO" "Using service principal authentication"
+        pac auth create --applicationId "$SERVICE_PRINCIPAL_ID" --clientSecret "$SERVICE_PRINCIPAL_SECRET" --tenant "$TENANT_ID" --url "$DATAVERSE_URL"
     else
-        echo "❌ Authentication failed"
+        log "WARNING" "Falling back to interactive authentication (not suitable for production)"
+        pac auth create --url "$DATAVERSE_URL"
+    fi
+    if [ $? -eq 0 ]; then
+        log "SUCCESS" "Authentication successful"
+    else
+        log "ERROR" "Authentication failed"
+        exit 1
     fi
 }
 

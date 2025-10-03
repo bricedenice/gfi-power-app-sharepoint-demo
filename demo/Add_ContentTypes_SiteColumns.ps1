@@ -53,19 +53,37 @@ param(
 
 # Utility helpers for readable, reviewable output
 function Step { param([string]$m) Write-Host "==> $m" }
+
+function Write-AuditLog {
+    param(
+        [string]$Message,
+        [string]$Level = "INFO",
+        [string]$Component = "Add_ContentTypes_SiteColumns"
+    )
+    
+    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss.fff"
+    $logEntry = "[$timestamp] [$Level] [$Component] $Message"
+    Write-Host $logEntry
+    # Append to a log file for audit purposes
+    $logFile = "AuditLog_$(Get-Date -Format 'yyyyMMdd').log"
+    $logEntry | Out-File -FilePath $logFile -Append -Encoding UTF8
+}
+
 function TryDo {
-  param([string]$Title, [scriptblock]$Action)
-  Step $Title
-  try {
-    & $Action
-    Write-Host "   ✔ $Title" -ForegroundColor Green
-    return $true
-  }
-  catch {
-    Write-Host "   ✖ $Title" -ForegroundColor Red
-    Write-Host "     Error: $($_.Exception.Message)" -ForegroundColor DarkRed
-    return $false
-  }
+    param([string]$Title, [scriptblock]$Action)
+    Step $Title
+    try {
+        & $Action
+        Write-Host "   ✔ $Title" -ForegroundColor Green
+        Write-AuditLog -Message "Operation '$Title' completed successfully" -Level "SUCCESS"
+        return $true
+    }
+    catch {
+        Write-Host "   ✖ $Title" -ForegroundColor Red
+        Write-Host "     Error: $($_.Exception.Message)" -ForegroundColor DarkRed
+        Write-AuditLog -Message "Operation '$Title' failed: $($_.Exception.Message)" -Level "ERROR"
+        return $false
+    }
 }
 
 # Creates a site column if it doesn't exist, or confirms it if it does.
@@ -178,10 +196,41 @@ function Set-ListFieldValues {
 
 # Connect to SharePoint Online
 # Certificate-based app-only auth keeps secrets out of code and supports CI/CD.
-$ok = TryDo "Connect to $SiteUrl" {
-  Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId -Thumbprint $Thumbprint -Tenant $TenantId -ErrorAction Stop
+
+# Function to check certificate expiration
+function Test-CertificateExpiration {
+    param([string]$Thumbprint)
+    
+    $cert = Get-ChildItem -Path Cert:\CurrentUser\My\$Thumbprint -ErrorAction SilentlyContinue
+    if (-not $cert) {
+        $cert = Get-ChildItem -Path Cert:\LocalMachine\My\$Thumbprint -ErrorAction SilentlyContinue
+    }
+    
+    if (-not $cert) {
+        throw "Certificate $Thumbprint not found in certificate store"
+    }
+    
+    $daysUntilExpiry = ($cert.NotAfter - (Get-Date)).Days
+    
+    if ($daysUntilExpiry -lt 0) {
+        throw "Certificate expired on $($cert.NotAfter). Renewal required."
+    } elseif ($daysUntilExpiry -lt 30) {
+        Write-Warning "⚠️ Certificate expires in $daysUntilExpiry days ($($cert.NotAfter)). Renewal recommended."
+    } else {
+        Write-Host "✔ Certificate valid until $($cert.NotAfter) ($daysUntilExpiry days remaining)" -ForegroundColor Green
+    }
+    
+    return $cert
 }
-if (-not $ok) { exit 1 }
+
+$ok = TryDo "Connect to $SiteUrl" {
+    Test-CertificateExpiration -Thumbprint $Thumbprint
+    Connect-PnPOnline -Url $SiteUrl -ClientId $ClientId -Thumbprint $Thumbprint -Tenant $TenantId -ErrorAction Stop
+}
+if (-not $ok) { 
+    Write-AuditLog -Message "Connection to $SiteUrl failed, exiting script" -Level "CRITICAL"
+    exit 1 
+}
 
 # Create or verify site columns
 # We choose Choice type for both columns to enforce controlled vocabulary used by views, flows, and security.

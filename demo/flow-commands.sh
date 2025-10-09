@@ -25,12 +25,58 @@ function log() {
     echo "[$timestamp] [$level] [flow-commands] $msg" >> "$logfile"
 }
 
+# Check FIPS 140-2 compliance for DoD environments
+function check_fips_compliance() {
+    log "INFO" "Checking FIPS 140-2 encryption compliance..."
+    
+    # Check for Linux kernel parameter
+    if [ -f /proc/sys/crypto/fips_enabled ]; then
+        local fips_status=$(cat /proc/sys/crypto/fips_enabled 2>/dev/null)
+        if [ "$fips_status" = "1" ]; then
+            log "SUCCESS" "✔ FIPS 140-2 mode enabled on Linux"
+            echo "✔ FIPS 140-2 mode enabled" >&2
+            return 0
+        else
+            log "WARNING" "⚠️ FIPS 140-2 mode NOT enabled on Linux"
+            echo "⚠️ FIPS 140-2 mode NOT enabled" >&2
+            echo "For DoD IL4/IL5 environments, enable FIPS mode with kernel parameter: fips=1" >&2
+            echo "Note: FIPS 140-2 is required for DoD contracts but may not be necessary for commercial/civilian environments" >&2
+            return 1
+        fi
+    # Check for macOS (limited support)
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        log "WARNING" "⚠️ FIPS 140-2 compliance check not automated for macOS"
+        echo "⚠️ FIPS 140-2 compliance check not automated for macOS" >&2
+        echo "For DoD IL4/IL5 environments, ensure cryptographic operations use FIPS 140-2 validated modules" >&2
+        echo "Note: FIPS 140-2 is required for DoD contracts but may not be necessary for commercial/civilian environments" >&2
+        return 1
+    else
+        log "WARNING" "⚠️ Could not determine FIPS 140-2 status"
+        echo "⚠️ Could not determine FIPS 140-2 status" >&2
+        return 1
+    fi
+}
+
 # Get access token (for REST API)
 get_token() {
+    # Check if using service principal (non-interactive) authentication
+    local auth_type=$(az account show --query "user.type" -o tsv 2>/dev/null)
+    
+    if [ "$auth_type" = "servicePrincipal" ]; then
+        log "SUCCESS" "✔ Using non-interactive authentication (service principal) - production compliant"
+    elif [ "$auth_type" = "user" ]; then
+        log "WARNING" "⚠️ Using interactive user authentication"
+        log "WARNING" "DoD environments require non-interactive authentication (service principal)"
+        log "WARNING" "Interactive auth is acceptable for dev/test and corporate civilian environments only"
+        echo "⚠️ Using interactive authentication - not suitable for production/DoD environments" >&2
+    fi
+    
     az account get-access-token --resource https://service.flow.microsoft.com --query accessToken -o tsv 2>/dev/null
     if [ $? -ne 0 ]; then
         log "ERROR" "Azure CLI not authenticated. Run 'az login' first."
-        echo "❌ Azure CLI not authenticated. Run 'az login' first."
+        echo "❌ Azure CLI not authenticated." >&2
+        echo "For production/DoD: Use 'az login --service-principal'" >&2
+        echo "For dev/test/civilian: Use 'az login' (interactive)" >&2
         exit 1
     fi
     log "INFO" "Access token retrieved successfully"

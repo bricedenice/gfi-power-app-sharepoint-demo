@@ -169,6 +169,14 @@ function Get-DataverseSchema {
 - **Access Control**: Use least-privilege RBAC (e.g., Reader for users, Contributor for admins). Audit Key Vault access monthly.
 - **Rate Limits**: Start with gpt-4o-mini (cheaper, ~50K tokens/min). Monitor via Azure Metrics to avoid throttling.
 - **Audits**: Log all API calls (Azure Monitor) for GCC High compliance reviews. No one wants a DoD auditor's side-eye.
+- **Non-Interactive Authentication**: For production and DoD environments, use service principal or certificate-based authentication. Interactive authentication is acceptable for dev/test and corporate civilian environments only.
+- **FIPS 140-2 Compliance**: 
+  - **DoD/IL4/IL5 Requirement**: FIPS 140-2 compliant encryption is **mandatory** for DoD contracts and GCC High environments (IL4/IL5)
+  - **Commercial/Civilian Environments**: FIPS 140-2 is **not required** for commercial or civilian corporate environments, but can be enabled if needed for additional security
+  - **Windows Configuration**: Enable via registry: `Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy" -Name "Enabled" -Value 1`
+  - **Linux Configuration**: Add kernel parameter `fips=1` to bootloader configuration (e.g., GRUB)
+  - **macOS Configuration**: Ensure cryptographic operations use FIPS 140-2 validated modules (consult security team for specific configuration)
+  - **Verification**: Scripts in this repository include automated FIPS compliance checks that warn but do not block execution to maintain compatibility across environments
 
 ## Troubleshooting
 

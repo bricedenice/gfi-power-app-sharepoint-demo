@@ -25,6 +25,17 @@ Enterprise-ready PowerShell and shell scripts for Microsoft 365, SharePoint, and
 - `flow-commands.sh` - Power Automate flow management CLI wrapper
 - `solution-commands.sh` - Power Platform solution lifecycle management
 
+#### GFIConceptFlow Solution Progress
+- **Status**: In Progress
+- **Enterprise Integrations**: Added connectors for Jira, ServiceNow, and Salesforce to meet non-negotiable enterprise integration requirements.
+- **DoD Compliance**: Ensuring all modifications align with DoD standards for security and documentation.
+- **Security Enhancements** (October 2025):
+  - Added FIPS 140-2 encryption compliance checks to all deployment scripts
+  - Enforced non-interactive authentication detection and warnings
+  - Updated documentation to clarify DoD vs civilian environment requirements
+  - All scripts now include automated compliance checks with warnings (non-blocking for flexibility)
+- **Next Steps**: Pack and deploy the updated solution to the environment for testing.
+
 ### Documentation
 - `How-To-Use-AI-In-GCC.md` - Azure OpenAI integration guide for GCC High
 - `JSON-Dev-Checklist.md` - Comprehensive checklist for Power Automate JSON development
@@ -40,10 +51,22 @@ Enterprise-ready PowerShell and shell scripts for Microsoft 365, SharePoint, and
 
 ### DoD/GCC Compliance
 - Azure Government region support (IL4/IL5)
-- FIPS 140-2 encryption compatibility
-- Audit logging and compliance tracking
+- FIPS 140-2 encryption compliance checks (mandatory for DoD, optional for civilian)
+- Non-interactive authentication enforcement for production environments
+- Audit logging and compliance tracking (FedRAMP AU-2, AU-12)
 - Sites.Selected permission scoping
 - CUI handling best practices
+
+#### Authentication Requirements
+- **DoD/Production Environments**: Non-interactive authentication (service principal or certificate-based) is **required**
+- **Dev/Test/Civilian Environments**: Interactive authentication is **acceptable** but non-interactive is recommended
+- All scripts include authentication method detection and warnings
+
+#### FIPS 140-2 Encryption
+- **DoD IL4/IL5**: FIPS 140-2 compliant encryption is **mandatory**
+- **Commercial/Civilian**: FIPS 140-2 is **optional** but can be enabled for enhanced security
+- Scripts include automated FIPS compliance checks with warnings (non-blocking for flexibility)
+- Configuration guides provided for Windows, Linux, and macOS
 
 ### Code Quality
 - Functional programming patterns (immutability, pure functions, higher-order functions)

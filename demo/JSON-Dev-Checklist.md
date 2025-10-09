@@ -255,9 +255,33 @@ DoD contracts require Azure Government regions and CUI-compliant handling. FIPS 
 
 Azure Government Region: ________________________ (e.g., US Gov Virginia)
 CUI Requirements: [ ] Met [ ] Pending
-FIPS 140-2 Encryption: [ ] Enabled
+FIPS 140-2 Encryption: [ ] Enabled [ ] Not Required (commercial/civilian only)
 Audit Logging: [ ] Enabled (e.g., gfi_FlowErrors)
 Verification: Consult DoD security team
+
+### Authentication Requirements
+
+Authentication Method: [ ] Service Principal (required for DoD/production) [ ] Certificate-based (required for DoD/production) [ ] Interactive (dev/test/civilian only)
+Service Principal ID: ________________________ (if using service principal)
+Certificate Thumbprint: ________________________ (if using certificate-based auth)
+
+**Important Notes**:
+- **DoD/Production**: Non-interactive authentication (service principal or certificate-based) is **mandatory**
+- **Dev/Test/Civilian**: Interactive authentication is **acceptable** but non-interactive is recommended
+- Deployment scripts enforce authentication method checks with warnings
+
+### FIPS 140-2 Encryption Configuration
+
+**DoD/IL4/IL5 Environments** (Mandatory):
+- Windows: Enable via `Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy" -Name "Enabled" -Value 1`
+- Linux: Add kernel parameter `fips=1` to bootloader configuration
+- macOS: Consult security team for FIPS-validated module configuration
+- Verification: Run deployment scripts to check FIPS status
+
+**Commercial/Civilian Environments** (Optional):
+- FIPS 140-2 is **not required** but can be enabled for enhanced security
+- Deployment scripts will warn if FIPS is not enabled but will not block execution
+- Consider organizational security policies when deciding whether to enable
 
 
 

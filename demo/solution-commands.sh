@@ -24,6 +24,38 @@ function log() {
     echo "[$timestamp] [$level] [solution-commands] $msg" >> "$logfile"
 }
 
+# Check FIPS 140-2 compliance for DoD environments
+function check_fips_compliance() {
+    log "INFO" "Checking FIPS 140-2 encryption compliance..."
+    
+    # Check for Linux kernel parameter
+    if [ -f /proc/sys/crypto/fips_enabled ]; then
+        local fips_status=$(cat /proc/sys/crypto/fips_enabled 2>/dev/null)
+        if [ "$fips_status" = "1" ]; then
+            log "SUCCESS" "✔ FIPS 140-2 mode enabled on Linux"
+            echo "✔ FIPS 140-2 mode enabled" >&2
+            return 0
+        else
+            log "WARNING" "⚠️ FIPS 140-2 mode NOT enabled on Linux"
+            echo "⚠️ FIPS 140-2 mode NOT enabled" >&2
+            echo "For DoD IL4/IL5 environments, enable FIPS mode with kernel parameter: fips=1" >&2
+            echo "Note: FIPS 140-2 is required for DoD contracts but may not be necessary for commercial/civilian environments" >&2
+            return 1
+        fi
+    # Check for macOS (limited support)
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        log "WARNING" "⚠️ FIPS 140-2 compliance check not automated for macOS"
+        echo "⚠️ FIPS 140-2 compliance check not automated for macOS" >&2
+        echo "For DoD IL4/IL5 environments, ensure cryptographic operations use FIPS 140-2 validated modules" >&2
+        echo "Note: FIPS 140-2 is required for DoD contracts but may not be necessary for commercial/civilian environments" >&2
+        return 1
+    else
+        log "WARNING" "⚠️ Could not determine FIPS 140-2 status"
+        echo "⚠️ Could not determine FIPS 140-2 status" >&2
+        return 1
+    fi
+}
+
 # Check if Power Platform CLI is installed
 function check_pac_cli() {
     if ! command -v pac &> /dev/null; then
@@ -266,11 +298,21 @@ list_solutions() {
 # Authenticate to Power Platform
 authenticate() {
     log "INFO" "Authenticating to Power Platform..."
+    
+    # Run FIPS compliance check
+    check_fips_compliance || true  # Don't fail on FIPS check, just warn
+    
     if [ -n "$SERVICE_PRINCIPAL_ID" ] && [ -n "$SERVICE_PRINCIPAL_SECRET" ]; then
         log "INFO" "Using service principal authentication"
+        log "SUCCESS" "✔ Non-interactive authentication enforced for production compliance"
         pac auth create --applicationId "$SERVICE_PRINCIPAL_ID" --clientSecret "$SERVICE_PRINCIPAL_SECRET" --tenant "$TENANT_ID" --url "$DATAVERSE_URL"
     else
         log "WARNING" "Falling back to interactive authentication (not suitable for production)"
+        log "WARNING" "DoD environments require non-interactive authentication (service principal or certificate-based)"
+        log "WARNING" "Interactive auth is acceptable for dev/test and corporate civilian environments only"
+        echo "⚠️ Using interactive authentication - not suitable for production/DoD environments" >&2
+        echo "For production/DoD: Set SERVICE_PRINCIPAL_ID and SERVICE_PRINCIPAL_SECRET environment variables" >&2
+        echo "For dev/test/civilian: Interactive auth is acceptable" >&2
         pac auth create --url "$DATAVERSE_URL"
     fi
     if [ $? -eq 0 ]; then

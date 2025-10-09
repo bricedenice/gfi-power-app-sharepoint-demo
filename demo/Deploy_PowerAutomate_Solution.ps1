@@ -83,7 +83,42 @@ function Test-EndpointCompliance {
     }
 }
 
+# Check FIPS 140-2 compliance for DoD environments
+function Test-FIPSCompliance {
+    Write-DeploymentLog "Checking FIPS 140-2 encryption compliance..." "STEP"
+    
+    # Check if FIPS mode is enabled (Windows)
+    if ($IsWindows -or $env:OS -match "Windows") {
+        try {
+            $fipsEnabled = Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy" -Name "Enabled" -ErrorAction SilentlyContinue
+            if ($fipsEnabled.Enabled -eq 1) {
+                Write-DeploymentLog "✔ FIPS 140-2 mode enabled on Windows" "SUCCESS"
+                return $true
+            } else {
+                Write-DeploymentLog "⚠️ FIPS 140-2 mode NOT enabled on Windows" "WARNING"
+                Write-DeploymentLog "For DoD IL4/IL5 environments, enable FIPS mode: Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy' -Name 'Enabled' -Value 1" "WARNING"
+                Write-DeploymentLog "Note: FIPS 140-2 is required for DoD contracts but may not be necessary for commercial/civilian environments" "INFO"
+                return $false
+            }
+        }
+        catch {
+            Write-DeploymentLog "⚠️ Could not check FIPS status: $($_.Exception.Message)" "WARNING"
+            return $false
+        }
+    }
+    # Check for Linux/macOS (kernel parameter or OpenSSL FIPS module)
+    elseif ($IsLinux -or $IsMacOS) {
+        Write-DeploymentLog "⚠️ FIPS 140-2 compliance check not automated for Linux/macOS" "WARNING"
+        Write-DeploymentLog "For DoD IL4/IL5 environments on Linux, ensure 'fips=1' kernel parameter is set" "WARNING"
+        Write-DeploymentLog "Note: FIPS 140-2 is required for DoD contracts but may not be necessary for commercial/civilian environments" "INFO"
+        return $false
+    }
+    
+    return $false
+}
+
 Test-EndpointCompliance
+Test-FIPSCompliance
 
 # Enterprise logging and error handling infrastructure
 $ErrorActionPreference = "Stop"
@@ -170,10 +205,16 @@ function Initialize-PowerPlatformCLI {
     if ($ServicePrincipalId -and $ServicePrincipalSecret) {
         $authArgs = @("create", "--applicationId", $ServicePrincipalId, "--clientSecret", $ServicePrincipalSecret, "--tenant", $TenantId, "--url", $EnvironmentUrl)
         Write-DeploymentLog "Using service principal authentication for unattended operation" "INFO"
+        Write-DeploymentLog "✔ Non-interactive authentication enforced for production compliance" "SUCCESS"
     } elseif ($UseInteractiveAuth) {
         Write-Warning "⚠️ Using interactive auth. Not suitable for production automation."
+        Write-Warning "⚠️ DoD environments require non-interactive authentication (service principal or certificate-based)"
+        Write-Warning "⚠️ Interactive auth is acceptable for dev/test and corporate civilian environments only"
         $authArgs = @("create", "--url", $EnvironmentUrl)
     } else {
+        Write-DeploymentLog "✖ Authentication method not specified" "ERROR"
+        Write-DeploymentLog "For production/DoD environments: Provide -ServicePrincipalId and -ServicePrincipalSecret" "ERROR"
+        Write-DeploymentLog "For dev/test/civilian environments: Use -UseInteractiveAuth flag" "ERROR"
         throw "Service principal credentials required for production. Use -UseInteractiveAuth for dev/test only."
     }
     

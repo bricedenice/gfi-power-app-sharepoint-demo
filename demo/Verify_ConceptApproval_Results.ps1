@@ -81,6 +81,47 @@ function Test-EndpointCompliance {
 
 Test-EndpointCompliance
 
+# Check FIPS 140-2 compliance for DoD environments
+function Test-FIPSCompliance {
+    Write-Host "`nChecking FIPS 140-2 encryption compliance..." -ForegroundColor Cyan
+    
+    # Check if FIPS mode is enabled (Windows)
+    if ($IsWindows -or $env:OS -match "Windows") {
+        try {
+            $fipsEnabled = Get-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy" -Name "Enabled" -ErrorAction SilentlyContinue
+            if ($fipsEnabled.Enabled -eq 1) {
+                Write-Host "✔ FIPS 140-2 mode enabled on Windows" -ForegroundColor Green
+                Write-AuditLog -Message "FIPS 140-2 mode enabled on Windows" -Level "SUCCESS"
+                return $true
+            } else {
+                Write-Warning "⚠️ FIPS 140-2 mode NOT enabled on Windows"
+                Write-Host "For DoD IL4/IL5 environments, enable FIPS mode:" -ForegroundColor Yellow
+                Write-Host "  Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Lsa\FipsAlgorithmPolicy' -Name 'Enabled' -Value 1" -ForegroundColor Yellow
+                Write-Host "Note: FIPS 140-2 is required for DoD contracts but may not be necessary for commercial/civilian environments" -ForegroundColor Gray
+                Write-AuditLog -Message "FIPS 140-2 mode NOT enabled - required for DoD IL4/IL5" -Level "WARNING"
+                return $false
+            }
+        }
+        catch {
+            Write-Warning "⚠️ Could not check FIPS status: $($_.Exception.Message)"
+            Write-AuditLog -Message "Could not check FIPS status: $($_.Exception.Message)" -Level "WARNING"
+            return $false
+        }
+    }
+    # Check for Linux/macOS (kernel parameter or OpenSSL FIPS module)
+    elseif ($IsLinux -or $IsMacOS) {
+        Write-Warning "⚠️ FIPS 140-2 compliance check not automated for Linux/macOS"
+        Write-Host "For DoD IL4/IL5 environments on Linux, ensure 'fips=1' kernel parameter is set" -ForegroundColor Yellow
+        Write-Host "Note: FIPS 140-2 is required for DoD contracts but may not be necessary for commercial/civilian environments" -ForegroundColor Gray
+        Write-AuditLog -Message "FIPS 140-2 compliance check not automated for Linux/macOS" -Level "WARNING"
+        return $false
+    }
+    
+    return $false
+}
+
+Test-FIPSCompliance
+
 # TECHNIQUE: Import required modules with error handling
 function Import-RequiredModules {
     $modules = @(

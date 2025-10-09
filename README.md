@@ -3,6 +3,9 @@
 ## Overview
 PowerShell automation scripts for Microsoft 365 and SharePoint demo environment setup. Simulates **Global Force Integration (GFI) Strategic Concepts Division** user management, group provisioning, and SharePoint integration.
 
+## Sway Presentation
+https://sway.cloud.microsoft/xs9JB7bGQeJPUoSq?ref=Link
+
 ## Repository Structure
 ```
 /GFI-SCD-Demo/
